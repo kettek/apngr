@@ -1,0 +1,4 @@
+github.com/kettek/apng v0.0.0-20191108220231-414630eed80f h1:dnCYnTSltLuPMfc7dMrkz2uBUcEf/OFBR8yRh3oRT98=
+github.com/kettek/apng v0.0.0-20191108220231-414630eed80f/go.mod h1:x78/VRQYKuCftMWS0uK5e+F5RJ7S4gSlESRWI0Prl6Q=
+github.com/spf13/pflag v1.0.5 h1:iy+VFUOCP1a+8yFto/drg2CJ5u0yRoB7fZw3DKv/JXA=
+github.com/spf13/pflag v1.0.5/go.mod h1:McXfInJRrz4CZXVZOBLb0bTZqETkiAhM9Iw0y3An2Bg=

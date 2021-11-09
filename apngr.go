@@ -31,6 +31,7 @@ import (
 
 var varDelayNumerator, varDelayDenominator int
 var varDisposeString, varBlendString string
+var varFirstDefault bool
 var varLoopCount int
 
 func main() {
@@ -52,12 +53,15 @@ func main() {
 		blendUsage         = "animate: blend operation, may be source or over"
 		loopDefault        = 0
 		loopUsage          = "animate: loop count, 0 means infinite"
+		firstFrameDefault  = false
+		firstFrameUsage    = "animate: mark the first frame as being the default image"
 	)
 	flag.IntVarP(&varDelayNumerator, "numerator", "n", numeratorDefault, numeratorUsage)
 	flag.IntVarP(&varDelayDenominator, "denominator", "d", denominatorDefault, denominatorUsage)
 	flag.IntVarP(&varLoopCount, "loopCount", "l", loopDefault, loopUsage)
 	flag.StringVar(&varDisposeString, "dispose", disposeDefault, disposeUsage)
 	flag.StringVar(&varBlendString, "blend", blendDefault, blendUsage)
+	flag.BoolVar(&varFirstDefault, "firstDefault", firstFrameDefault, firstFrameUsage)
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  animate|a [options] [out.png] [frame1.png frame2.png ... frameN.png]\n")
@@ -182,8 +186,14 @@ func animate() {
 		}
 		a.Frames[i-2].DelayDenominator = uint16(varDelayDenominator)
 		a.Frames[i-2].DelayNumerator = uint16(varDelayNumerator)
+		if i-2 == 0 {
+			a.Frames[i-2].IsDefault = varFirstDefault
+		}
 	}
 	err = apng.Encode(outf, a)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func convert() {

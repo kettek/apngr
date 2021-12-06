@@ -30,7 +30,7 @@ import (
 )
 
 var varDelayNumerator, varDelayDenominator, varOutputFrameIteratorStart int
-var varDisposeString, varBlendString, varOutputFramePadding string
+var varDisposeString, varBlendString, varOutputFramePadding, varOutputDirectory string
 var varFirstDefault, varIterateFirstFrame bool
 var varLoopCount int
 
@@ -60,6 +60,8 @@ func main() {
 		outputFrameIteratorStartUsage   = "extract: the numerical representation of the starting number to represent frames"
 		outputFramePaddingDefault       = ""
 		outputFramePaddingUsage         = "extract: amount of zeros to pad the frame number with. Defaults to the nearest place value of the frame total"
+		outputDirectoryDefault          = ""
+		outputDirectoryUsage            = "extract: output directory to extract to. Defaults to the file's name without an extension"
 	)
 	flag.IntVarP(&varDelayNumerator, "numerator", "n", numeratorDefault, numeratorUsage)
 	flag.IntVarP(&varDelayDenominator, "denominator", "d", denominatorDefault, denominatorUsage)
@@ -67,6 +69,7 @@ func main() {
 	flag.StringVar(&varDisposeString, "dispose", disposeDefault, disposeUsage)
 	flag.StringVar(&varBlendString, "blend", blendDefault, blendUsage)
 	flag.BoolVar(&varFirstDefault, "firstDefault", firstFrameDefault, firstFrameUsage)
+	flag.StringVarP(&varOutputDirectory, "output", "o", outputDirectoryDefault, outputDirectoryUsage)
 	flag.IntVarP(&varOutputFrameIteratorStart, "iteratorStart", "i", outputFrameIteratorStartDefault, outputFrameIteratorStartUsage)
 	flag.StringVarP(&varOutputFramePadding, "iteratorPadding", "p", outputFramePaddingDefault, outputFramePaddingUsage)
 	flag.BoolVar(&varIterateFirstFrame, "iterateDefault", varIterateFirstFrame, firstFrameIsNumber)
@@ -116,10 +119,15 @@ func extract() {
 		}
 
 		fmt.Printf("Extracting %d frames!\n", len(a.Frames))
-		fdir := path.Base(args[i])
-		ext := path.Ext(args[i])
-		if len(ext) != 0 {
-			fdir = fdir[:len(fdir)-len(ext)]
+		var fdir string
+		if varOutputDirectory != "" {
+			fdir = varOutputDirectory
+		} else {
+			fdir = path.Base(args[i])
+			ext := path.Ext(args[i])
+			if len(ext) != 0 {
+				fdir = fdir[:len(fdir)-len(ext)]
+			}
 		}
 		fmt.Printf("Creating export directory, \"%s\"\n", fdir)
 		err = os.Mkdir(fdir, 0777)

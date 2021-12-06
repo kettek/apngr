@@ -29,9 +29,9 @@ import (
 	"github.com/kettek/apng"
 )
 
-var varDelayNumerator, varDelayDenominator int
-var varDisposeString, varBlendString string
-var varFirstDefault bool
+var varDelayNumerator, varDelayDenominator, varOutputFrameIteratorStart int
+var varDisposeString, varBlendString, varOutputFramePadding string
+var varFirstDefault, varIterateFirstFrame bool
 var varLoopCount int
 
 func main() {
@@ -43,18 +43,23 @@ func main() {
 	}()
 
 	const (
-		numeratorDefault   = 1
-		numeratorUsage     = "animate: delay numerator"
-		denominatorDefault = 10
-		denominatorUsage   = "animate: delay denominator"
-		disposeDefault     = "background"
-		disposeUsage       = "animate: dispose operation, may be none, background, or previous"
-		blendDefault       = "source"
-		blendUsage         = "animate: blend operation, may be source or over"
-		loopDefault        = 0
-		loopUsage          = "animate: loop count, 0 means infinite"
-		firstFrameDefault  = false
-		firstFrameUsage    = "animate: mark the first frame as being the default image"
+		numeratorDefault                = 1
+		numeratorUsage                  = "animate: delay numerator"
+		denominatorDefault              = 10
+		denominatorUsage                = "animate: delay denominator"
+		disposeDefault                  = "background"
+		disposeUsage                    = "animate: dispose operation, may be none, background, or previous"
+		blendDefault                    = "source"
+		blendUsage                      = "animate: blend operation, may be source or over"
+		loopDefault                     = 0
+		loopUsage                       = "animate: loop count, 0 means infinite"
+		firstFrameDefault               = false
+		firstFrameUsage                 = "animate: mark the first frame as being the default image"
+		firstFrameIsNumber              = "extract: outputs the first frame as part of the extraction iteration instead of \"default.png\""
+		outputFrameIteratorStartDefault = 0
+		outputFrameIteratorStartUsage   = "extract: the numerical representation of the starting number to represent frames"
+		outputFramePaddingDefault       = ""
+		outputFramePaddingUsage         = "extract: amount of zeros to pad the frame number with. Defaults to the nearest place value of the frame total"
 	)
 	flag.IntVarP(&varDelayNumerator, "numerator", "n", numeratorDefault, numeratorUsage)
 	flag.IntVarP(&varDelayDenominator, "denominator", "d", denominatorDefault, denominatorUsage)
@@ -62,6 +67,9 @@ func main() {
 	flag.StringVar(&varDisposeString, "dispose", disposeDefault, disposeUsage)
 	flag.StringVar(&varBlendString, "blend", blendDefault, blendUsage)
 	flag.BoolVar(&varFirstDefault, "firstDefault", firstFrameDefault, firstFrameUsage)
+	flag.IntVarP(&varOutputFrameIteratorStart, "iteratorStart", "i", outputFrameIteratorStartDefault, outputFrameIteratorStartUsage)
+	flag.StringVarP(&varOutputFramePadding, "iteratorPadding", "p", outputFramePaddingDefault, outputFramePaddingUsage)
+	flag.BoolVar(&varIterateFirstFrame, "iterateDefault", varIterateFirstFrame, firstFrameIsNumber)
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  animate|a [options] [out.png] [frame1.png frame2.png ... frameN.png]\n")
@@ -117,17 +125,25 @@ func extract() {
 		err = os.Mkdir(fdir, 0777)
 		if err != nil {
 			if err == os.ErrExist {
-				fmt.Printf("Existsts")
+				fmt.Printf("Exists")
 			}
 			panic(err)
 		}
+
+		var outname string
+		if varOutputFramePadding != "" {
+			outname = fmt.Sprintf("%%0%sd.png", varOutputFramePadding)
+		} else {
+			outname = fmt.Sprintf("%%0%dd.png", len(fmt.Sprintf("%d", len(a.Frames))))
+		}
+
 		for i, frame := range a.Frames {
 			fname := ""
-			if i == 0 && frame.IsDefault {
+			if frame.IsDefault && !varIterateFirstFrame {
 				fname = "default.png"
-				i = i - 1
+				i--
 			} else {
-				fname = fmt.Sprintf("%d.png", i)
+				fname = fmt.Sprintf(outname, varOutputFrameIteratorStart+i)
 			}
 			fmt.Printf("%s...", path.Join(fdir, fname))
 			file, err := os.Create(path.Join(fdir, fname))

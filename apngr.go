@@ -312,6 +312,16 @@ func query() {
 			} else {
 				fmt.Printf("Frame %d\n", i)
 			}
+			switch frame.Image.(type) {
+			case *image.Paletted:
+				fmt.Printf("\tImage: Paletted\n")
+			case *image.Gray:
+				fmt.Printf("\tImage: Gray\n")
+			case *image.RGBA:
+				fmt.Printf("\tImage: RGBA\n")
+			case *image.NRGBA:
+				fmt.Printf("\tImage: NRGBA\n")
+			}
 			fmt.Printf("\tWidth x Height: %dx%d\n", b.Max.X, b.Max.Y)
 			fmt.Printf("\tXOffset x YOffset: %dx%d\n", frame.XOffset, frame.YOffset)
 			fmt.Printf("\tDelay: %f\n", frame.GetDelay())

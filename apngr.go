@@ -17,8 +17,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package main
 
 import (
+	"errors"
 	"fmt"
 	"image"
+	"image/color"
 	"image/gif"
 	"image/png"
 	"os"
@@ -249,12 +251,98 @@ func convert() {
 			if err != nil {
 				panic(err)
 			}
+
+			// Find if we need to repalettize.
+			maxPaletteLength := -1
+			mustRepalettize := false
+			for i := 0; i < len(g.Image); i++ {
+				if maxPaletteLength == -1 {
+					maxPaletteLength = len(g.Image[i].Palette)
+				}
+				if len(g.Image[i].Palette) != maxPaletteLength {
+					mustRepalettize = true
+					break
+				}
+				for j := 0; j < len(g.Image); j++ {
+					if j == i {
+						continue
+					}
+					for k := 0; k < len(g.Image[i].Palette); k++ {
+						r1, g1, b1, a1 := g.Image[i].Palette[k].RGBA()
+						r2, g2, b2, a2 := g.Image[j].Palette[k].RGBA()
+						if r1 == r2 || g1 == g2 || b1 == b2 || a1 == a2 {
+							mustRepalettize = true
+							break
+						}
+					}
+					if mustRepalettize {
+						break
+					}
+				}
+				if mustRepalettize {
+					break
+				}
+			}
+
+			if mustRepalettize {
+				insertColorEntry := func(f *image.Paletted, c color.Color) (int, error) {
+					r1, g1, b1, a1 := c.RGBA()
+					// Use existing entry if it exists.
+					for entryIndex, entry := range f.Palette {
+						r2, g2, b2, a2 := entry.RGBA()
+						if r1 == r2 && g1 == g2 && b1 == b2 && a1 == a2 {
+							return entryIndex, nil
+						}
+					}
+					// No such color exists, attempt to insert.
+					if len(f.Palette) == 256 {
+						return -1, errors.New("cannot insert, more than 256 colors")
+					}
+					f.Palette = append(f.Palette, c)
+					return len(f.Palette) - 1, nil
+				}
+				getClosestColorEntry := func(f *image.Paletted, c color.Color) int {
+					return f.Palette.Index(c)
+				}
+
+				primaryFrame := g.Image[0]
+
+				for frameIndex, frame := range g.Image {
+					fmt.Printf("Processing %d\n", frameIndex)
+					if frame == primaryFrame {
+						continue
+					}
+					m := make(map[int]int)
+					for i := 0; i < len(frame.Palette); i++ {
+						newIndex, err := insertColorEntry(primaryFrame, frame.Palette[i])
+						if err == nil {
+							m[i] = newIndex
+						} else {
+							newIndex = getClosestColorEntry(primaryFrame, frame.Palette[i])
+							m[i] = newIndex
+						}
+					}
+					// Make new pix referencing frame's pix to remap palette indices.
+					p := make([]uint8, len(frame.Pix))
+					for x := frame.Bounds().Min.X; x < frame.Bounds().Max.X; x++ {
+						for y := frame.Bounds().Min.Y; y < frame.Bounds().Max.Y; y++ {
+							i := frame.PixOffset(x, y)
+							p[i] = uint8(m[int(frame.Pix[i])])
+						}
+					}
+					frame.Pix = p
+					frame.Palette = primaryFrame.Palette
+				}
+			}
+
 			a.LoopCount = uint(g.LoopCount)
 			a.Frames = make([]apng.Frame, len(g.Image))
 			fmt.Printf("Total Frames: %d\n", len(g.Image))
 			for i := 0; i < len(g.Image); i = i + 1 {
 				fmt.Printf("Frame %d...", i)
 				a.Frames[i].Image = image.Image(g.Image[i])
+				a.Frames[i].XOffset = g.Image[i].Bounds().Min.X
+				a.Frames[i].YOffset = g.Image[i].Bounds().Min.Y
 				a.Frames[i].DelayNumerator = uint16(g.Delay[i])
 				switch g.Disposal[i] {
 				case gif.DisposalNone:
@@ -264,6 +352,7 @@ func convert() {
 				case gif.DisposalPrevious:
 					a.Frames[i].DisposeOp = apng.DISPOSE_OP_PREVIOUS
 				}
+				a.Frames[i].BlendOp = apng.BLEND_OP_OVER
 				fmt.Printf("...ok!\n")
 			}
 			fmt.Printf("Done!\n")

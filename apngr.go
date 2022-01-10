@@ -270,7 +270,7 @@ func convert() {
 					for k := 0; k < len(g.Image[i].Palette); k++ {
 						r1, g1, b1, a1 := g.Image[i].Palette[k].RGBA()
 						r2, g2, b2, a2 := g.Image[j].Palette[k].RGBA()
-						if r1 == r2 || g1 == g2 || b1 == b2 || a1 == a2 {
+						if r1 != r2 || g1 != g2 || b1 != b2 || a1 != a2 {
 							mustRepalettize = true
 							break
 						}

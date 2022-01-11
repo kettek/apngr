@@ -17,10 +17,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package main
 
 import (
-	"errors"
 	"fmt"
 	"image"
 	"image/color"
+	"image/draw"
 	"image/gif"
 	"image/png"
 	"os"
@@ -34,6 +34,7 @@ import (
 var varDelayNumerator, varDelayDenominator, varOutputFrameIteratorStart int
 var varDisposeString, varBlendString, varOutputFramePadding, varOutputDirectory string
 var varFirstDefault, varIterateFirstFrame bool
+var varMaintainPaletted bool
 var varLoopCount int
 
 func main() {
@@ -64,6 +65,8 @@ func main() {
 		outputFramePaddingUsage         = "extract: amount of zeros to pad the frame number with. Defaults to the nearest place value of the frame total"
 		outputDirectoryDefault          = ""
 		outputDirectoryUsage            = "extract: output directory to extract to. Defaults to the file's name without an extension"
+		maintainPalettedDefault         = false
+		maintainPalettedUsage           = "convert: maintain paletted and do not convert to RGBA if the palette entry count exceeds 256"
 	)
 	flag.IntVarP(&varDelayNumerator, "numerator", "n", numeratorDefault, numeratorUsage)
 	flag.IntVarP(&varDelayDenominator, "denominator", "d", denominatorDefault, denominatorUsage)
@@ -75,6 +78,7 @@ func main() {
 	flag.IntVarP(&varOutputFrameIteratorStart, "iteratorStart", "i", outputFrameIteratorStartDefault, outputFrameIteratorStartUsage)
 	flag.StringVarP(&varOutputFramePadding, "iteratorPadding", "p", outputFramePaddingDefault, outputFramePaddingUsage)
 	flag.BoolVar(&varIterateFirstFrame, "iterateDefault", varIterateFirstFrame, firstFrameIsNumber)
+	flag.BoolVar(&varMaintainPaletted, "maintainPaletted", varMaintainPaletted, maintainPalettedUsage)
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  animate|a [options] [out.png] [frame1.png frame2.png ... frameN.png]\n")
@@ -284,7 +288,35 @@ func convert() {
 				}
 			}
 
-			if mustRepalettize {
+			// Analyze for RGBA upgrade
+			uniqueColors := make(map[[4]uint32]struct{})
+			for _, img := range g.Image {
+				for _, p := range img.Palette {
+					r, g, b, a := p.RGBA()
+					k := [4]uint32{r, g, b, a}
+					if _, ok := uniqueColors[k]; !ok {
+						uniqueColors[k] = struct{}{}
+					}
+					if len(uniqueColors) > 256 {
+						break
+					}
+				}
+				if len(uniqueColors) > 256 {
+					break
+				}
+			}
+
+			var frames []image.Image
+
+			if len(uniqueColors) > 256 && !varMaintainPaletted {
+				// Convert frames to APNG
+				for _, frame := range g.Image {
+					img := image.NewRGBA(frame.Bounds())
+					draw.Draw(img, frame.Bounds(), frame, frame.Rect.Min, draw.Src)
+					frames = append(frames, img)
+				}
+			} else if mustRepalettize {
+				// Repalettize if we have less than 256 colors.
 				insertColorEntry := func(f *image.Paletted, c color.Color) (int, error) {
 					r1, g1, b1, a1 := c.RGBA()
 					// Use existing entry if it exists.
@@ -295,8 +327,8 @@ func convert() {
 						}
 					}
 					// No such color exists, attempt to insert.
-					if len(f.Palette) == 256 {
-						return -1, errors.New("cannot insert, more than 256 colors")
+					if len(f.Palette) >= 256 {
+						return -1, &PaletteLimitError{}
 					}
 					f.Palette = append(f.Palette, c)
 					return len(f.Palette) - 1, nil
@@ -306,9 +338,9 @@ func convert() {
 				}
 
 				primaryFrame := g.Image[0]
+				frames = append(frames, primaryFrame)
 
-				for frameIndex, frame := range g.Image {
-					fmt.Printf("Processing %d\n", frameIndex)
+				for _, frame := range g.Image {
 					if frame == primaryFrame {
 						continue
 					}
@@ -332,15 +364,21 @@ func convert() {
 					}
 					frame.Pix = p
 					frame.Palette = primaryFrame.Palette
+					frames = append(frames, frame)
+				}
+			} else {
+				// Otherwise write out as it is.
+				for _, frame := range g.Image {
+					frames = append(frames, frame)
 				}
 			}
 
 			a.LoopCount = uint(g.LoopCount)
-			a.Frames = make([]apng.Frame, len(g.Image))
-			fmt.Printf("Total Frames: %d\n", len(g.Image))
-			for i := 0; i < len(g.Image); i = i + 1 {
+			a.Frames = make([]apng.Frame, len(frames))
+			fmt.Printf("Total Frames: %d\n", len(frames))
+			for i := 0; i < len(frames); i = i + 1 {
 				fmt.Printf("Frame %d...", i)
-				a.Frames[i].Image = image.Image(g.Image[i])
+				a.Frames[i].Image = frames[i]
 				a.Frames[i].XOffset = g.Image[i].Bounds().Min.X
 				a.Frames[i].YOffset = g.Image[i].Bounds().Min.Y
 				a.Frames[i].DelayNumerator = uint16(g.Delay[i])
@@ -434,4 +472,11 @@ func query() {
 			}
 		}
 	}
+}
+
+// Errors
+type PaletteLimitError struct{}
+
+func (e *PaletteLimitError) Error() string {
+	return "palette limit reached"
 }

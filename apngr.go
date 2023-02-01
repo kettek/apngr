@@ -17,6 +17,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"image"
 	"image/color"
@@ -25,11 +26,29 @@ import (
 	"image/png"
 	"os"
 	"path"
+	"strings"
 
 	flag "github.com/spf13/pflag"
 
 	"github.com/kettek/apng"
 )
+
+// Frame represents frames that can be used in JSON
+type Frame struct {
+	Numerator   *int
+	Denominator *int
+	// If the first frame, this marks it as being the default image.
+	Default *bool
+	// May be "none", "background", or "previous"
+	Dispose *string
+	// May be "over"
+	Blend *string
+	// Source image file to use
+	Image string
+}
+
+// Frames are what is expected from a passed in JSON file.
+type Frames []Frame
 
 var varDelayNumerator, varDelayDenominator, varOutputFrameIteratorStart int
 var varDisposeString, varBlendString, varOutputFramePadding, varOutputDirectory string
@@ -81,7 +100,7 @@ func main() {
 	flag.BoolVar(&varMaintainPaletted, "maintainPaletted", varMaintainPaletted, maintainPalettedUsage)
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "  animate|a [options] [out.png] [frame1.png frame2.png ... frameN.png]\n")
+		fmt.Fprintf(os.Stderr, "  animate|a [options] [out.png] [frame1.png frames.json ... frameN.png]\n")
 		fmt.Fprintf(os.Stderr, "  convert|c [anim1.gif anim2.gif ... animN.gif]\n")
 		fmt.Fprintf(os.Stderr, "  extract|e [anim1.png anim2.png ... animN.png]\n")
 		fmt.Fprintf(os.Stderr, "  query|q [anim1.png anim2.png ... animN.png]\n")
@@ -186,38 +205,110 @@ func animate() {
 	}
 	a := apng.APNG{
 		LoopCount: uint(varLoopCount),
-		Frames:    make([]apng.Frame, len(args)-2),
+		Frames:    make([]apng.Frame, 0),
 	}
+
+	makeFrame := func() apng.Frame {
+		frame := apng.Frame{}
+		switch varDisposeString {
+		case "none":
+			frame.DisposeOp = apng.DISPOSE_OP_NONE
+		case "background":
+			frame.DisposeOp = apng.DISPOSE_OP_BACKGROUND
+		case "previous":
+			frame.DisposeOp = apng.DISPOSE_OP_PREVIOUS
+		default:
+			frame.DisposeOp = apng.DISPOSE_OP_BACKGROUND
+		}
+		switch varBlendString {
+		case "over":
+			frame.BlendOp = apng.BLEND_OP_OVER
+		}
+		frame.DelayDenominator = uint16(varDelayDenominator)
+		frame.DelayNumerator = uint16(varDelayNumerator)
+		return frame
+	}
+
+	firstFrameRead := false
 	for i := 2; i < len(args); i = i + 1 {
-		fmt.Printf("Adding %s...\n", args[i])
 		f, err := os.Open(args[i])
 		if err != nil {
 			panic(err)
 		}
 		defer f.Close()
-		m, err := png.Decode(f)
-		if err != nil {
-			panic(err)
-		}
-		a.Frames[i-2].Image = m
-		switch varDisposeString {
-		case "none":
-			a.Frames[i-2].DisposeOp = apng.DISPOSE_OP_NONE
-		case "background":
-			a.Frames[i-2].DisposeOp = apng.DISPOSE_OP_BACKGROUND
-		case "previous":
-			a.Frames[i-2].DisposeOp = apng.DISPOSE_OP_PREVIOUS
-		default:
-			a.Frames[i-2].DisposeOp = apng.DISPOSE_OP_BACKGROUND
-		}
-		switch varBlendString {
-		case "over":
-			a.Frames[i-2].BlendOp = apng.BLEND_OP_OVER
-		}
-		a.Frames[i-2].DelayDenominator = uint16(varDelayDenominator)
-		a.Frames[i-2].DelayNumerator = uint16(varDelayNumerator)
-		if i-2 == 0 {
-			a.Frames[i-2].IsDefault = varFirstDefault
+
+		if strings.HasSuffix(args[i], ".json") {
+			var frames Frames
+			d := json.NewDecoder(f)
+			if err := d.Decode(&frames); err != nil {
+				panic(err)
+			}
+			fmt.Println("AIGHT", frames)
+			for i, f := range frames {
+				frame := makeFrame()
+
+				if f.Image == "" {
+					panic(fmt.Errorf("unprovided image for %s:%d", args[i], i))
+				}
+				fmt.Printf("... %s\n", f.Image)
+
+				img, err := os.Open(f.Image)
+				if err != nil {
+					panic(err)
+				}
+				defer img.Close()
+
+				m, err := png.Decode(img)
+				if err != nil {
+					panic(err)
+				}
+				frame.Image = m
+
+				if f.Dispose != nil {
+					switch *f.Dispose {
+					case "none":
+						frame.DisposeOp = apng.DISPOSE_OP_NONE
+					case "background":
+						frame.DisposeOp = apng.DISPOSE_OP_BACKGROUND
+					case "previous":
+						frame.DisposeOp = apng.DISPOSE_OP_PREVIOUS
+					default:
+						frame.DisposeOp = apng.DISPOSE_OP_BACKGROUND
+					}
+				}
+				if f.Blend != nil {
+					if *f.Blend == "over" {
+						frame.BlendOp = apng.BLEND_OP_OVER
+					}
+				}
+				if f.Denominator != nil {
+					frame.DelayDenominator = uint16(*f.Denominator)
+				}
+				if f.Numerator != nil {
+					frame.DelayNumerator = uint16(*f.Numerator)
+				}
+				if !firstFrameRead {
+					if f.Default != nil {
+						frame.IsDefault = *f.Default
+					} else {
+						frame.IsDefault = varFirstDefault
+					}
+					firstFrameRead = true
+				}
+				a.Frames = append(a.Frames, frame)
+			}
+		} else {
+			frame := makeFrame()
+			if !firstFrameRead {
+				frame.IsDefault = varFirstDefault
+				firstFrameRead = true
+			}
+			m, err := png.Decode(f)
+			if err != nil {
+				panic(err)
+			}
+			frame.Image = m
+			a.Frames = append(a.Frames, frame)
 		}
 	}
 	err = apng.Encode(outf, a)
